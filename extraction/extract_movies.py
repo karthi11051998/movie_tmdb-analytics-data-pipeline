@@ -1,29 +1,30 @@
+import io
 import os
-import json
 from datetime import datetime
-
-import time
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 
 import boto3
 import pandas as pd
 import requests
 from dotenv import load_dotenv
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
-# Load environment variables
 load_dotenv()
 
 API_KEY = os.getenv("TMDB_API_KEY")
+BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
+S3_PREFIX = os.getenv("S3_RAW_PREFIX")
+TOTAL_PAGES = int(os.getenv("TMDB_PAGES", 25))
+LANGUAGE = os.getenv("TMDB_LANGUAGE", "en-US")
 
 if not API_KEY:
-    raise ValueError("TMDB_API_KEY not found in .env file")
+    raise ValueError("TMDB_API_KEY not configured")
 
-# TMDB endpoint
-url = "https://api.themoviedb.org/3/movie/popular"
+if not BUCKET_NAME:
+    raise ValueError("S3_BUCKET_NAME not configured")
 
-# Store all movie records
-all_movies = []
+if not S3_PREFIX:
+    raise ValueError("S3_RAW_PREFIX not configured")
 
 session = requests.Session()
 
@@ -38,59 +39,30 @@ adapter = HTTPAdapter(max_retries=retry_strategy)
 session.mount("https://", adapter)
 session.mount("http://", adapter)
 
-# Collect 25 pages (~500 movies)
-for page in range(1, 26):
+url = "https://api.themoviedb.org/3/movie/popular"
 
-    params = {
-        "api_key": API_KEY,
-        "language": "en-US",
-        "page": page
-    }
+all_movies = []
 
-    try:
-        response = session.get(
+for page in range(1, TOTAL_PAGES + 1):
+
+    response = session.get(
         url,
-        params=params,
-        headers={"User-Agent": "Mozilla/5.0"},
+        params={
+            "api_key": API_KEY,
+            "language": LANGUAGE,
+            "page": page
+        },
         timeout=30
-        )
-        response.raise_for_status()
+    )
 
-        movies = response.json()["results"]
+    response.raise_for_status()
 
-        all_movies.extend(movies)
+    all_movies.extend(
+        response.json()["results"]
+    )
 
-        time.sleep(1)
-
-        print(f"Collected page {page} - {len(movies)} records")
-
-    except Exception as e:
-        print(f"Failed on page {page}")
-        print(e)
-        break
-
-print(f"\nTotal movies collected: {len(all_movies)}")
-
-# Create timestamp
-timestamp = datetime.now().strftime("%Y%m%d")
-
-# Create data directory if it doesn't exist
-os.makedirs("data", exist_ok=True)
-
-# Save JSON
-json_file = f"data/movies_{timestamp}.json"
-
-with open(json_file, "w", encoding="utf-8") as f:
-    json.dump(all_movies, f, indent=4)
-
-print(f"JSON saved: {json_file}")
-
-# Transform into tabular format
-movie_data = []
-
-for movie in all_movies:
-
-    movie_data.append({
+movie_data = [
+    {
         "movie_id": movie.get("id"),
         "title": movie.get("title"),
         "release_date": movie.get("release_date"),
@@ -99,29 +71,21 @@ for movie in all_movies:
         "vote_count": movie.get("vote_count"),
         "adult": movie.get("adult"),
         "language": movie.get("original_language")
-    })
+    }
+    for movie in all_movies
+]
 
-# Create DataFrame
 df = pd.DataFrame(movie_data)
 
-print(f"Rows in DataFrame: {len(df)}")
+csv_buffer = io.StringIO()
+df.to_csv(csv_buffer, index=False)
 
-# Save CSV
-csv_file = f"data/movies_{timestamp}.csv"
+timestamp = datetime.utcnow().strftime("%Y%m%d")
 
-df.to_csv(csv_file, index=False)
+s3_key = f"{S3_PREFIX}/movies_{timestamp}.csv"
 
-print(f"CSV saved: {csv_file}")
-
-# Upload to S3
-bucket_name = "movie-tmdb-data-lake"
-
-s3 = boto3.client("s3")
-
-s3.upload_file(
-    csv_file,
-    bucket_name,
-    f"raw/movies/{os.path.basename(csv_file)}"
+boto3.client("s3").put_object(
+    Bucket=BUCKET_NAME,
+    Key=s3_key,
+    Body=csv_buffer.getvalue()
 )
-
-print("CSV uploaded to S3 successfully")

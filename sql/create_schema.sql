@@ -16,7 +16,7 @@ CREATE TABLE analytics.movie_fact (
 );
 
 
-# Since the processed data is already in Parquet, we can load directly using COPY command
+# Since the processed data is already in Parquet, we can load it directly to reshift using COPY command
 
 COPY analytics.movie_fact
 FROM 's3://movie-tmdb-data-lake/processed/movies/'

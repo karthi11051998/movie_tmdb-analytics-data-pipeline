@@ -1,13 +1,12 @@
 import io
 import os
-from datetime import datetime
-
 import boto3
 import pandas as pd
 import requests
 from dotenv import load_dotenv
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from datetime import datetime
 
 load_dotenv()
 
@@ -17,27 +16,19 @@ S3_PREFIX = os.getenv("S3_RAW_PREFIX")
 TOTAL_PAGES = int(os.getenv("TMDB_PAGES", 25))
 LANGUAGE = os.getenv("TMDB_LANGUAGE", "en-US")
 
-if not API_KEY:
-    raise ValueError("TMDB_API_KEY not configured")
-
-if not BUCKET_NAME:
-    raise ValueError("S3_BUCKET_NAME not configured")
-
-if not S3_PREFIX:
-    raise ValueError("S3_RAW_PREFIX not configured")
+if not all([API_KEY, BUCKET_NAME, S3_PREFIX]) :
+    raise ValueError("CRITICAL ERROR: Missing required environment configuration.")
 
 session = requests.Session()
 
 retry_strategy = Retry(
     total=5,
-    backoff_factor=2,
-    status_forcelist=[429, 500, 502, 503, 504]
+    backoff_factor=2
 )
 
 adapter = HTTPAdapter(max_retries=retry_strategy)
 
 session.mount("https://", adapter)
-session.mount("http://", adapter)
 
 url = "https://api.themoviedb.org/3/movie/popular"
 

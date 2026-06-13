@@ -227,6 +227,4 @@ movie_tmdb_analytics_data_pipeline/
 
 Karthikeyan
 
-Bachelor of Mechanical Engineering
-
 Aspiring Data Engineer | AWS | Python | SQL | Power BI
